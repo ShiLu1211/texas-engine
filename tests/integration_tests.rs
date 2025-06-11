@@ -155,3 +155,112 @@ fn test_full_round() {
     game.handle_action(PlayerAction::Check).unwrap(); // Bob过牌
     assert_eq!(game.state.stage, GameStage::Showdown);
 }
+
+#[test]
+fn test_showdown_split_sidepot() {
+    use crate::shared::*;
+    use crate::state::TexasHoldem;
+
+    let players = vec![
+        Player {
+            id: "p1".into(),
+            name: "A".into(),
+            chips: 0,
+            current_bet: 100,
+            is_active: true,
+            cards: Some((
+                Card {
+                    suit: Suit::Hearts,
+                    rank: Rank::Ace,
+                },
+                Card {
+                    suit: Suit::Diamonds,
+                    rank: Rank::Ace,
+                },
+            )),
+            has_acted: true,
+        },
+        Player {
+            id: "p2".into(),
+            name: "B".into(),
+            chips: 0,
+            current_bet: 200,
+            is_active: true,
+            cards: Some((
+                Card {
+                    suit: Suit::Spades,
+                    rank: Rank::King,
+                },
+                Card {
+                    suit: Suit::Clubs,
+                    rank: Rank::King,
+                },
+            )),
+            has_acted: true,
+        },
+        Player {
+            id: "p3".into(),
+            name: "C".into(),
+            chips: 0,
+            current_bet: 300,
+            is_active: true,
+            cards: Some((
+                Card {
+                    suit: Suit::Hearts,
+                    rank: Rank::Queen,
+                },
+                Card {
+                    suit: Suit::Diamonds,
+                    rank: Rank::Queen,
+                },
+            )),
+            has_acted: true,
+        },
+    ];
+
+    let community_cards = vec![
+        Card {
+            suit: Suit::Clubs,
+            rank: Rank::Two,
+        },
+        Card {
+            suit: Suit::Spades,
+            rank: Rank::Seven,
+        },
+        Card {
+            suit: Suit::Diamonds,
+            rank: Rank::Nine,
+        },
+        Card {
+            suit: Suit::Clubs,
+            rank: Rank::Ten,
+        },
+        Card {
+            suit: Suit::Spades,
+            rank: Rank::Jack,
+        },
+    ];
+
+    let mut game = TexasHoldem {
+        state: GameState {
+            players,
+            community_cards,
+            pot: 600,
+            current_player_index: 0,
+            dealer_position: 0,
+            small_blind: 10,
+            big_blind: 20,
+            stage: GameStage::Showdown,
+        },
+        deck: vec![],
+    };
+
+    game.resolve_showdown();
+
+    let winnings: Vec<u32> = game.state.players.iter().map(|p| p.chips).collect();
+    assert_eq!(winnings.iter().sum::<u32>(), 600);
+    // 说明主池（300）由所有人竞争，A赢 -> 300
+    // 边池1（200）由B、C争 -> B赢 -> 200
+    // 边池2（100）C自留 -> 100
+    assert_eq!(winnings, vec![300, 200, 100]);
+}

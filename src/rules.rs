@@ -308,7 +308,7 @@ fn check_straight(cards: &[Card]) -> (bool, Rank) {
 }
 
 /// 比较两个关键牌序列
-fn compare_kickers(k1: &[Rank], k2: &[Rank]) -> Ordering {
+pub fn compare_kickers(k1: &[Rank], k2: &[Rank]) -> Ordering {
     for (a, b) in k1.iter().zip(k2.iter()) {
         let cmp = a.cmp(b);
         if cmp != Ordering::Equal {
@@ -323,21 +323,12 @@ pub fn compare_hands(
     hand1: &(Card, Card),
     hand2: &(Card, Card),
     community_cards: &[Card],
-) -> std::cmp::Ordering {
+) -> Ordering {
     let eval1 = evaluate_hand(hand1, community_cards);
     let eval2 = evaluate_hand(hand2, community_cards);
 
     match eval1.rank.cmp(&eval2.rank) {
-        std::cmp::Ordering::Equal => {
-            // 比较关键牌
-            for (k1, k2) in eval1.kickers.iter().zip(eval2.kickers.iter()) {
-                match k1.cmp(k2) {
-                    std::cmp::Ordering::Equal => continue,
-                    other => return other,
-                }
-            }
-            std::cmp::Ordering::Equal
-        }
+        Ordering::Equal => compare_kickers(&eval1.kickers, &eval2.kickers),
         other => other,
     }
 }

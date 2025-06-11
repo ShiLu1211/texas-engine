@@ -7,6 +7,13 @@ pub struct TexasHoldem {
     pub deck: Vec<Card>,
 }
 
+/// Side pot 表示一个筹码池（主池或边池）
+#[derive(Debug)]
+struct SidePot {
+    amount: u32,
+    eligible_players: Vec<usize>, // 玩家索引
+}
+
 impl TexasHoldem {
     /// 创建新游戏
     pub fn new(players: Vec<Player>, small_blind: u32, big_blind: u32) -> Self {
@@ -268,6 +275,7 @@ impl TexasHoldem {
                 self.state.stage = GameStage::Showdown;
             }
             GameStage::Showdown => {
+                self.resolve_showdown();
                 // 游戏结束，准备新一局
                 self.setup_new_hand();
             }
@@ -279,5 +287,107 @@ impl TexasHoldem {
         self.advance_to_next_player(); // 找到第一个有效玩家
 
         Ok(())
+    }
+
+    /// 在 Showdown 阶段结算赢家，分配筹码
+    pub fn resolve_showdown(&mut self) {
+        let pots = self.compute_side_pots();
+        let evaluations = self.evaluate_all_hands();
+        let mut winnings = vec![0u32; self.state.players.len()];
+
+        for pot in pots {
+            let mut best_eval: Option<&HandEvaluation> = None;
+            let mut winners = Vec::new();
+
+            for &idx in &pot.eligible_players {
+                if let Some(eval) = &evaluations[idx] {
+                    match &best_eval {
+                        None => {
+                            best_eval = Some(eval);
+                            winners = vec![idx];
+                        }
+                        Some(current_best) => match eval.rank.cmp(&current_best.rank) {
+                            std::cmp::Ordering::Greater => {
+                                best_eval = Some(eval);
+                                winners = vec![idx];
+                            }
+                            std::cmp::Ordering::Equal => {
+                                match compare_kickers(&eval.kickers, &current_best.kickers) {
+                                    std::cmp::Ordering::Greater => {
+                                        best_eval = Some(eval);
+                                        winners = vec![idx];
+                                    }
+                                    std::cmp::Ordering::Equal => {
+                                        winners.push(idx);
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            _ => {}
+                        },
+                    }
+                }
+            }
+
+            let share = pot.amount / winners.len() as u32;
+            for &idx in &winners {
+                winnings[idx] += share;
+            }
+        }
+
+        // 应用筹码分配
+        for (i, win) in winnings.into_iter().enumerate() {
+            self.state.players[i].chips += win;
+        }
+    }
+
+    fn compute_side_pots(&self) -> Vec<SidePot> {
+        let mut pots = Vec::new();
+        let mut remaining: Vec<(usize, u32)> = self
+            .state
+            .players
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| p.current_bet > 0)
+            .map(|(i, p)| (i, p.current_bet))
+            .collect();
+
+        while !remaining.is_empty() {
+            let min_bet = remaining.iter().map(|(_, b)| *b).min().unwrap();
+            let layer: Vec<usize> = remaining.iter().map(|(i, _)| *i).collect();
+            pots.push(SidePot {
+                amount: min_bet * layer.len() as u32,
+                eligible_players: layer.clone(),
+            });
+            remaining = remaining
+                .into_iter()
+                .filter_map(|(i, b)| {
+                    if b > min_bet {
+                        Some((i, b - min_bet))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+        }
+
+        pots
+    }
+
+    fn evaluate_all_hands(&self) -> Vec<Option<HandEvaluation>> {
+        self.state
+            .players
+            .iter()
+            .map(|p| {
+                if p.is_active && p.cards.is_some() {
+                    Some(evaluate_hand(
+                        &p.cards.unwrap(),
+                        &self.state.community_cards,
+                    ))
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 }
