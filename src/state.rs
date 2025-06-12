@@ -46,7 +46,9 @@ impl TexasHoldem {
         for player in &mut self.state.players {
             player.cards = None;
             player.is_active = true;
+            player.has_acted = false;
             player.current_bet = 0;
+            player.total_bet_in_hand = 0;
         }
 
         // 发牌
@@ -69,6 +71,7 @@ impl TexasHoldem {
             let amount = player.chips.min(self.state.small_blind);
             player.chips -= amount;
             player.current_bet = amount;
+            player.total_bet_in_hand += amount;
             self.state.pot += amount;
         }
 
@@ -76,6 +79,7 @@ impl TexasHoldem {
             let amount = player.chips.min(self.state.big_blind);
             player.chips -= amount;
             player.current_bet = amount;
+            player.total_bet_in_hand += amount;
             self.state.pot += amount;
         }
     }
@@ -95,8 +99,16 @@ impl TexasHoldem {
     pub fn handle_action(&mut self, action: PlayerAction) -> Result<(), GameError> {
         // 提前计算当前轮次的下注额
         let current_bet_round = self.current_bet_round();
-
         let player_index = self.state.current_player_index;
+
+        // 对于需要重置has_acted的动作，提前调用
+        match &action {
+            PlayerAction::Bet(_) | PlayerAction::Raise(_) => {
+                self.reset_has_acted();
+            }
+            _ => {}
+        }
+
         let player = self
             .state
             .players
@@ -114,7 +126,6 @@ impl TexasHoldem {
                 self.advance_to_next_player();
             }
             PlayerAction::Check => {
-                // 使用之前计算的current_bet_round
                 if current_bet_round > player.current_bet {
                     return Err(GameError::InvalidAction);
                 }
@@ -130,6 +141,7 @@ impl TexasHoldem {
                 }
                 player.chips -= amount;
                 player.current_bet += amount;
+                player.total_bet_in_hand += amount;
                 self.state.pot += amount;
                 player.has_acted = true;
                 self.advance_to_next_player();
@@ -147,6 +159,7 @@ impl TexasHoldem {
                 let chips_to_put = total_needed - player.current_bet;
                 player.chips -= chips_to_put;
                 player.current_bet += chips_to_put;
+                player.total_bet_in_hand += chips_to_put;
                 self.state.pot += chips_to_put;
                 player.has_acted = true;
                 self.advance_to_next_player();
@@ -163,6 +176,7 @@ impl TexasHoldem {
 
                 player.chips -= amount_to_call;
                 player.current_bet += amount_to_call;
+                player.total_bet_in_hand += amount_to_call;
                 self.state.pot += amount_to_call;
                 player.has_acted = true;
                 self.advance_to_next_player();
@@ -206,34 +220,37 @@ impl TexasHoldem {
 
     /// 检查当前阶段是否完成
     fn check_round_completion(&mut self) -> Result<(), GameError> {
-        let active: Vec<_> = self.state.players.iter().filter(|p| p.is_active).collect();
-        if active.len() <= 1 {
+        let active_players: Vec<_> = self.state.players.iter().filter(|p| p.is_active).collect();
+
+        if active_players.len() <= 1 {
             self.state.stage = GameStage::Showdown;
             return Ok(());
         }
 
-        let high = self.current_bet_round();
+        let current_bet_round = self.current_bet_round();
 
-        // Pre-flop 大盲特判：只有当大盲还没行动 & 最高下注等于大盲时，才等他操作
-        if self.state.stage == GameStage::PreFlop {
-            let bb_idx = (self.state.dealer_position + 2) % self.state.players.len();
-            if let Some(bb) = self.state.players.get(bb_idx) {
-                if bb.is_active && !bb.has_acted && high == self.state.big_blind {
-                    return Ok(());
-                }
-            }
-        }
+        // 检查所有活跃玩家是否已完成本轮下注
+        let all_acted = active_players.iter().all(|p| {
+            // 玩家已行动或没有筹码
+            p.has_acted || p.chips == 0
+        });
 
-        // 全员都真·操作过，并且他们的 current_bet == high（或已 all-in）
-        let everyone = active
+        // 检查所有玩家是否跟注或全下
+        let all_called = active_players
             .iter()
-            .all(|p| p.has_acted && (p.current_bet == high || p.chips == 0));
+            .all(|p| p.current_bet == current_bet_round || p.chips == 0);
 
-        if everyone {
+        if all_acted && all_called {
             self.advance_to_next_stage()?;
         }
 
         Ok(())
+    }
+
+    fn reset_has_acted(&mut self) {
+        for player in &mut self.state.players {
+            player.has_acted = false;
+        }
     }
 
     /// 推进到下一阶段
@@ -289,38 +306,84 @@ impl TexasHoldem {
         Ok(())
     }
 
+    /// 计算边池
+    fn compute_side_pots(&self) -> Vec<SidePot> {
+        // 收集所有玩家的总下注额
+        let mut bets: Vec<_> = self
+            .state
+            .players
+            .iter()
+            .enumerate()
+            .map(|(i, p)| (i, p.total_bet_in_hand))
+            .collect();
+
+        // 按总下注额排序
+        bets.sort_by_key(|(_, bet)| *bet);
+
+        let mut pots = Vec::new();
+        let mut last_bet = 0;
+
+        for &(_, bet) in &bets {
+            if bet > last_bet {
+                // 计算当前层的下注额增量
+                let increment = bet - last_bet;
+
+                // 当前层合格的玩家：所有下注额大于等于当前下注额的玩家
+                let eligible_players: Vec<usize> = bets
+                    .iter()
+                    .filter(|(_, b)| *b >= bet)
+                    .map(|(i, _)| *i)
+                    .collect();
+
+                // 当前层边池的金额
+                let amount = increment * eligible_players.len() as u32;
+
+                pots.push(SidePot {
+                    amount,
+                    eligible_players,
+                });
+
+                last_bet = bet;
+            }
+        }
+
+        pots
+    }
+
     /// 在 Showdown 阶段结算赢家，分配筹码
     pub fn resolve_showdown(&mut self) {
-        let pots = self.compute_side_pots();
+        let side_pots = self.compute_side_pots();
         let evaluations = self.evaluate_all_hands();
-        let mut winnings = vec![0u32; self.state.players.len()];
+        let mut winnings = vec![0; self.state.players.len()];
 
-        for pot in pots {
+        // 处理每个边池
+        for pot in side_pots {
             let mut best_eval: Option<&HandEvaluation> = None;
             let mut winners = Vec::new();
 
-            for &idx in &pot.eligible_players {
-                if let Some(eval) = &evaluations[idx] {
-                    match &best_eval {
+            // 找出此边池的最佳手牌
+            for &player_index in &pot.eligible_players {
+                if let Some(eval) = &evaluations[player_index] {
+                    match best_eval {
                         None => {
                             best_eval = Some(eval);
-                            winners = vec![idx];
+                            winners = vec![player_index];
                         }
                         Some(current_best) => match eval.rank.cmp(&current_best.rank) {
                             std::cmp::Ordering::Greater => {
                                 best_eval = Some(eval);
-                                winners = vec![idx];
+                                winners = vec![player_index];
                             }
                             std::cmp::Ordering::Equal => {
-                                match compare_kickers(&eval.kickers, &current_best.kickers) {
-                                    std::cmp::Ordering::Greater => {
-                                        best_eval = Some(eval);
-                                        winners = vec![idx];
-                                    }
-                                    std::cmp::Ordering::Equal => {
-                                        winners.push(idx);
-                                    }
-                                    _ => {}
+                                if compare_kickers(&eval.kickers, &current_best.kickers)
+                                    == std::cmp::Ordering::Equal
+                                {
+                                    winners.push(player_index);
+                                } else if compare_kickers(&eval.kickers, &current_best.kickers)
+                                    == std::cmp::Ordering::Greater
+                                {
+                                    best_eval = Some(eval);
+                                    winners = vec![player_index];
                                 }
                             }
                             _ => {}
@@ -329,49 +392,19 @@ impl TexasHoldem {
                 }
             }
 
-            let share = pot.amount / winners.len() as u32;
-            for &idx in &winners {
-                winnings[idx] += share;
+            // 分配边池筹码
+            if !winners.is_empty() {
+                let share = pot.amount / winners.len() as u32;
+                for &winner in &winners {
+                    winnings[winner] += share;
+                }
             }
         }
 
         // 应用筹码分配
-        for (i, win) in winnings.into_iter().enumerate() {
-            self.state.players[i].chips += win;
+        for (i, amount) in winnings.into_iter().enumerate() {
+            self.state.players[i].chips += amount;
         }
-    }
-
-    fn compute_side_pots(&self) -> Vec<SidePot> {
-        let mut pots = Vec::new();
-        let mut remaining: Vec<(usize, u32)> = self
-            .state
-            .players
-            .iter()
-            .enumerate()
-            .filter(|(_, p)| p.current_bet > 0)
-            .map(|(i, p)| (i, p.current_bet))
-            .collect();
-
-        while !remaining.is_empty() {
-            let min_bet = remaining.iter().map(|(_, b)| *b).min().unwrap();
-            let layer: Vec<usize> = remaining.iter().map(|(i, _)| *i).collect();
-            pots.push(SidePot {
-                amount: min_bet * layer.len() as u32,
-                eligible_players: layer.clone(),
-            });
-            remaining = remaining
-                .into_iter()
-                .filter_map(|(i, b)| {
-                    if b > min_bet {
-                        Some((i, b - min_bet))
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-        }
-
-        pots
     }
 
     fn evaluate_all_hands(&self) -> Vec<Option<HandEvaluation>> {

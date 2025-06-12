@@ -24,6 +24,7 @@ fn test_new_game_setup() {
             is_active: true,
             current_bet: 0,
             has_acted: false,
+            total_bet_in_hand: 0,
         },
         Player {
             id: "2".to_string(),
@@ -33,6 +34,7 @@ fn test_new_game_setup() {
             is_active: true,
             current_bet: 0,
             has_acted: false,
+            total_bet_in_hand: 0,
         },
     ];
 
@@ -63,6 +65,7 @@ fn test_preflop_actions(
             is_active: true,
             current_bet: 0,
             has_acted: false,
+            total_bet_in_hand: 0,
         },
         Player {
             id: "2".to_string(),
@@ -72,6 +75,7 @@ fn test_preflop_actions(
             is_active: true,
             current_bet: 20, // Bob是大盲注
             has_acted: false,
+            total_bet_in_hand: 0,
         },
     ];
 
@@ -108,6 +112,7 @@ fn test_full_round() {
             is_active: true,
             current_bet: 0,
             has_acted: false,
+            total_bet_in_hand: 0,
         },
         Player {
             id: "2".to_string(),
@@ -117,6 +122,7 @@ fn test_full_round() {
             is_active: true,
             current_bet: 0,
             has_acted: false,
+            total_bet_in_hand: 0,
         },
     ];
 
@@ -179,6 +185,7 @@ fn test_showdown_split_sidepot() {
                 },
             )),
             has_acted: true,
+            total_bet_in_hand: 100,
         },
         Player {
             id: "p2".into(),
@@ -197,6 +204,7 @@ fn test_showdown_split_sidepot() {
                 },
             )),
             has_acted: true,
+            total_bet_in_hand: 200,
         },
         Player {
             id: "p3".into(),
@@ -215,6 +223,7 @@ fn test_showdown_split_sidepot() {
                 },
             )),
             has_acted: true,
+            total_bet_in_hand: 300,
         },
     ];
 

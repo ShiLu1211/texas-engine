@@ -142,6 +142,29 @@ pub struct Player {
     pub is_active: bool,             // 是否还在游戏中
     pub current_bet: u32,            // 当前轮已下注额
     pub has_acted: bool,             // 是否已行动
+    pub total_bet_in_hand: u32,      // 当前手牌中投入的总筹码
+}
+
+/// 牌型
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum HandRank {
+    HighCard = 0,
+    OnePair = 1,
+    TwoPair = 2,
+    ThreeOfAKind = 3,
+    Straight = 4,
+    Flush = 5,
+    FullHouse = 6,
+    FourOfAKind = 7,
+    StraightFlush = 8,
+    RoyalFlush = 9,
+}
+
+/// 牌型评估结果
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct HandEvaluation {
+    pub rank: HandRank,
+    pub kickers: Vec<Rank>, // 用于比较的关键牌序列
 }
 
 /// 游戏状态

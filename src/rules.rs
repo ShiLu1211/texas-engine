@@ -38,28 +38,6 @@ pub fn create_shuffled_deck() -> Vec<Card> {
     deck
 }
 
-/// 牌型
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum HandRank {
-    HighCard,      // 高牌
-    OnePair,       // 一对
-    TwoPair,       // 两对
-    ThreeOfAKind,  // 三条
-    Straight,      // 顺子
-    Flush,         // 同花
-    FullHouse,     // 葫芦
-    FourOfAKind,   // 四条
-    StraightFlush, // 同花顺
-    RoyalFlush,    // 皇家同花顺
-}
-
-/// 牌型评估结果
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct HandEvaluation {
-    pub rank: HandRank,
-    pub kickers: Vec<Rank>, // 用于比较的关键牌序列
-}
-
 /// 评估玩家手牌强度
 pub fn evaluate_hand(player_cards: &(Card, Card), community_cards: &[Card]) -> HandEvaluation {
     // 合并所有牌
