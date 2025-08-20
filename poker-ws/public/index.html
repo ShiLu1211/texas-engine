@@ -1,0 +1,90 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Texas Hold'em</title>
+  <style>
+    body{font-family:system-ui,Arial;margin:0;padding:16px;background:#0b132b;color:#eee}
+    .card{padding:12px;background:#1c2541;border-radius:8px;margin-bottom:12px}
+    input,button{padding:8px;border-radius:6px;border:1px solid #444;background:#3a506b;color:#fff}
+    button{cursor:pointer}
+    .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    pre{white-space:pre-wrap;background:#0f1b2a;padding:8px;border-radius:6px;max-height:280px;overflow:auto}
+    .pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#5bc0be;color:#021}
+  </style>
+</head>
+<body>
+  <h2>Texas Hold'em Demo</h2>
+  <div class="card">
+    <div class="row">
+      <label>WS URL</label>
+      <input id="wsurl" value="ws://" size="32"/>
+      <label>User</label>
+      <input id="uid" placeholder="u1" value="u1"/>
+      <button id="btnConnect">Connect</button>
+      <span id="status" class="pill">disconnected</span>
+    </div>
+  </div>
+  <div class="card">
+    <div class="row">
+      <button id="btnCreate">Create Room</button>
+      <input id="room" placeholder="room id"/>
+      <button id="btnJoin">Join</button>
+      <button id="btnReady">Ready</button>
+      <button id="btnUnready">Unready</button>
+      <button id="btnLeave">Leave</button>
+      <button id="btnRebuy">Rebuy</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="row">
+      <button data-act="check">Check</button>
+      <button data-act="call">Call</button>
+      <button id="btnRaise">Raise 50</button>
+      <button data-act="fold">Fold</button>
+    </div>
+  </div>
+  <div class="card"><pre id="log"></pre></div>
+
+  <script>
+  const q = id => document.getElementById(id);
+  const log = (...a) => { q('log').textContent += a.join(' ') + "\n"; q('log').scrollTop = q('log').scrollHeight; }
+  let ws, roomId = '', uid = '';
+  q('wsurl').value = location.origin.replace(/^http/, 'ws') + '/ws';
+  q('btnConnect').onclick = () => {
+    uid = q('uid').value || 'u' + Math.random().toString(36).slice(2,6);
+    ws = new WebSocket(q('wsurl').value);
+    ws.onopen = () => { q('status').textContent = 'connected'; log('connected'); };
+    ws.onclose = () => { q('status').textContent = 'disconnected'; log('closed'); };
+    ws.onmessage = ev => {
+      log('<-', ev.data);
+      try { const msg = JSON.parse(ev.data);
+        if (msg.type === 'room_created') { roomId = msg.table_id; q('room').value = roomId; }
+        if (msg.type === 'table_snapshot') { /* you can render table */ }
+      } catch {}
+    };
+  };
+  q('btnCreate').onclick = () => {
+    const payload = { type:'create_room', table_id:null, client_msg_id: uid,
+      config: { small_blind:5, big_blind:10, starting_stack:1000, rebuy_hands:2, room_duration_sec:3600, action_time_ms:8000 } };
+    ws.send(JSON.stringify(payload)); log('->', JSON.stringify(payload));
+  };
+  q('btnJoin').onclick = () => {
+    roomId = q('room').value; const p = { type:'join_room', table_id:roomId, client_msg_id:uid };
+    ws.send(JSON.stringify(p)); log('->', JSON.stringify(p));
+  };
+  q('btnReady').onclick = () => { const p = { type:'ready', table_id:q('room').value, client_msg_id:uid, ready:true }; ws.send(JSON.stringify(p)); log('->', JSON.stringify(p)); };
+  q('btnUnready').onclick = () => { const p = { type:'ready', table_id:q('room').value, client_msg_id:uid, ready:false }; ws.send(JSON.stringify(p)); log('->', JSON.stringify(p)); };
+  q('btnLeave').onclick = () => { const p = { type:'leave_room', table_id:q('room').value, client_msg_id:uid }; ws.send(JSON.stringify(p)); log('->', JSON.stringify(p)); };
+  q('btnRebuy').onclick = () => { const p = { type:'rebuy', table_id:q('room').value, client_msg_id:uid }; ws.send(JSON.stringify(p)); log('->', JSON.stringify(p)); };
+  document.querySelectorAll('[data-act]').forEach(btn => btn.onclick = () => {
+    const action = btn.getAttribute('data-act'); const p = { type:'action', table_id:q('room').value, hand_id:'h', action, client_msg_id:uid };
+    ws.send(JSON.stringify(p)); log('->', JSON.stringify(p));
+  });
+  q('btnRaise').onclick = () => { const p = { type:'action', table_id:q('room').value, hand_id:'h', action:'raise', amount:50, client_msg_id:uid }; ws.send(JSON.stringify(p)); log('->', JSON.stringify(p)); };
+  </script>
+</body>
+</html>
+
+
